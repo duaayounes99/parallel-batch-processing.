@@ -1,0 +1,9 @@
+Django>=5.2,<5.3
+djangorestframework>=3.15,<3.17
+celery>=5.4,<6.0
+redis>=5.0,<7.0
+django-celery-results>=2.5,<3.0
+django-redis>=5.4,<6.0
+psycopg2-binary>=2.9,<3.0
+gunicorn>=22.0,<24.0
+flower>=2.0,<3.0
