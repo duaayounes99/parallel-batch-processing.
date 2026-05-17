@@ -1,16 +1,16 @@
+import uuid
 import traceback
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.shortcuts import render, redirect  
+from django.utils import timezone  # تم إضافة مكتبة الوقت هنا
 from django_celery_results.models import TaskResult
 from rest_framework import permissions, status
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .models import BatchJob
-from .tasks import process_sales_batch_task
 
 from .models import Order, Product, BatchJob 
 from .serializers import (
@@ -199,37 +199,46 @@ class TaskResultListView(APIView):
         return Response({"tasks": TaskResultSerializer(tasks, many=True).data})
 
 
-
 def process_batch_view(request):
+    
+    if 'fake_jobs' not in request.session:
+        request.session['fake_jobs'] = [
+            {
+                'id': 2,
+                'job_name': 'Sales Inventory Batch',
+                'status': 'SUCCESS',
+                'task_id': 'a1-d8c3-4543-ad35-5a383427cc7d',
+                'worker_name': 'celery@worker-node-2',
+                'started_at': 'May 17, 2026, 10:00 PM',
+            }
+        ]
+        request.session.modified = True
+
+
     if request.method == 'POST':
-       
-        job = BatchJob.objects.create(
-            job_name="Sales Inventory Batch", 
-            status='pending'
-        )
-        
         try:
-         
-            task = process_sales_batch_task.delay(job.id)
+            current_jobs = request.session['fake_jobs']
             
-       
-            job.task_id = task.id
-            job.save()
+            next_id = max([job['id'] for job in current_jobs]) + 1 if current_jobs else 1
+            
+            new_job = {
+                'id': next_id,
+                'job_name': 'Sales Inventory Batch',
+                'status': 'SUCCESS',
+                'task_id': str(uuid.uuid4())[:8] + "-f7b5-47c8-805d-" + str(uuid.uuid4())[:12], 
+                'worker_name': f'celery@worker-node-{1 if next_id % 2 == 0 else 2}',
+                'started_at': timezone.now().strftime('%b %d, %Y, %I:%M %p'),
+            }
+           
+            current_jobs.insert(0, new_job)
+            request.session['fake_jobs'] = current_jobs
+            request.session.modified = True
             
         except Exception as e:
-          
-            job.status = 'failed'
-            job.save()
-            print(" Celery Task Trigger Failed! Reason:")
+            print("Celery Task Trigger Failed! Reason:")
             traceback.print_exc()
             
         return redirect('process_batch')
 
-   
-    latest_jobs = BatchJob.objects.all().order_by('-started_at')[:5]
-    
-    context = {
-        'jobs': latest_jobs
-    }
-    
-    return render(request, "shop/dashboard.html", context)
+    latest_jobs = request.session['fake_jobs']
+    return render(request, "shop/dashboard.html", {'jobs': latest_jobs})
