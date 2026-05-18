@@ -5,7 +5,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.shortcuts import render, redirect  
-from django.utils import timezone  # تم إضافة مكتبة الوقت هنا
+from django.utils import timezone  
 from django_celery_results.models import TaskResult
 from rest_framework import permissions, status
 from rest_framework.authtoken.models import Token
@@ -261,6 +261,6 @@ def process_batch_view(request):
             messages.error(request, f"Batch processing failed: An error occurred during workload balancing. Details: {str(e)}")
             
   
-    return render(request, 'dashboard.html', {
+    return render(request, 'shop/dashboard.html', {
         'jobs': request.session.get('jobs_history', [])
     })
