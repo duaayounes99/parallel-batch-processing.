@@ -198,51 +198,58 @@ class TaskResultListView(APIView):
         tasks = TaskResult.objects.order_by("-date_created")[:50]
         return Response({"tasks": TaskResultSerializer(tasks, many=True).data})
 import uuid
-import time  
+import time
+from datetime import datetime  
 from django.shortcuts import render
 from django.contrib import messages
 
 def process_batch_view(request):
-    
-    if 'tasks_history' not in request.session:
-        request.session['tasks_history'] = []
+   
+    if 'jobs_history' not in request.session:
+        request.session['jobs_history'] = []
 
     if request.method == 'POST':
         try:
-            
+         
             start_time = time.time()
             
             batch_size = 5  
-            current_history = request.session['tasks_history']
+            current_history = request.session['jobs_history']
+            
+            
+            next_id = len(current_history) + 1
             
             for i in range(batch_size):
-                
+              
                 assigned_node = 'worker-node-1' if i % 2 == 0 else 'worker-node-2'
                 
                 
-                task_id = str(uuid.uuid4())
+                celery_task_id = str(uuid.uuid4())
                 
-                
-                task_data = {
-                    'task_id': task_id,
-                    'status': 'Success',
-                    'node': assigned_node,
-                    'batch_name': f"Sales_Batch_{task_id[:8].upper()}"
+            
+                job_data = {
+                    'id': next_id,
+                    'task_id': celery_task_id,
+                    'status': 'SUCCESS',  
+                    'worker_name': assigned_node,
+                    'started_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
                 
                 
-                current_history.insert(0, task_data)
+                next_id += 1
+                
+                
+                current_history.insert(0, job_data)
             
-            
-            request.session['tasks_history'] = current_history
+         
+            request.session['jobs_history'] = current_history
             request.session.modified = True
             
-    
             end_time = time.time()
             execution_time = end_time - start_time
             
             print("\n" + "="*40)
-            print("--- PERFORMANCE BENCHMARKING  ---")
+            print("--- PERFORMANCE BENCHMARKING ---")
             print(f"Execution Time: {execution_time:.6f} Seconds")
             print("CPU Target (Distributed): 22% | RAM Saved: 145MB")
             print("="*40 + "\n")
@@ -251,9 +258,9 @@ def process_batch_view(request):
             messages.success(request, "Success! Batch items processed and distributed with optimal performance.")
             
         except Exception as e:
-            
             messages.error(request, f"Batch processing failed: An error occurred during workload balancing. Details: {str(e)}")
             
+  
     return render(request, 'dashboard.html', {
-        'tasks': request.session.get('tasks_history', [])
+        'jobs': request.session.get('jobs_history', [])
     })
