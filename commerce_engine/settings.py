@@ -1,28 +1,15 @@
-"""
-Django settings for the High-Performance E-Commerce Backend Engine.
-
-The project is intentionally small, but the important production ideas are
-visible: PostgreSQL-ready transactions, Redis-backed cache/queues, DRF
-throttling, Celery worker limits, and django-celery-results.
-"""
 
 import os
 from pathlib import Path
 
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+SECRET_KEY = 'django-insecure-commerce-engine-2026-parallel-project-key-xyz'
 
-SECRET_KEY = os.environ.get(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-student-project-local-development-key",
-)
+DEBUG = True
 
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
-
-ALLOWED_HOSTS = os.environ.get(
-    "DJANGO_ALLOWED_HOSTS",
-    "127.0.0.1,localhost",
-).split(",")
+ALLOWED_HOSTS = ["*"]
 
 
 INSTALLED_APPS = [
@@ -32,24 +19,31 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+
+ 
     "rest_framework",
     "rest_framework.authtoken",
     "django_celery_results",
+
+
     "shop",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "shop.middleware.CapacityControlMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "shop.middleware.CapacityControlMiddleware",
 ]
 
 ROOT_URLCONF = "commerce_engine.urls"
+
+WSGI_APPLICATION = "commerce_engine.wsgi.application"
+
 
 TEMPLATES = [
     {
@@ -58,6 +52,7 @@ TEMPLATES = [
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
+                "django.template.context_processors.debug",
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
@@ -66,130 +61,65 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "commerce_engine.wsgi.application"
 
-
-if os.environ.get("POSTGRES_DB"):
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ["POSTGRES_DB"],
-            "USER": os.environ.get("POSTGRES_USER", "postgres"),
-            "PASSWORD": os.environ.get("POSTGRES_PASSWORD", "postgres"),
-            "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
-            "PORT": os.environ.get("POSTGRES_PORT", "5432"),
-            "CONN_MAX_AGE": 60,
-            "OPTIONS": {
-                # Avoid requests waiting forever when the database is unavailable.
-                "connect_timeout": 5,
-            },
-        }
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
-else:
-    # SQLite keeps the project easy to run for a quick demo. PostgreSQL should be
-    # used when demonstrating row locks with select_for_update under real load.
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+}
 
-
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
-]
-
-
-LANGUAGE_CODE = "en-us"
-
-TIME_ZONE = "UTC"
-
-USE_I18N = True
-
-USE_TZ = True
-
-
-STATIC_URL = "static/"
-
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-
-# Redis is used both as the Celery broker and as the Django cache backend.
-REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0")
-CACHE_REDIS_URL = os.environ.get("CACHE_REDIS_URL", "redis://127.0.0.1:6379/1")
 
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": CACHE_REDIS_URL,
+        "LOCATION": "redis://127.0.0.1:6379/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            "SOCKET_CONNECT_TIMEOUT": 2,
-            "SOCKET_TIMEOUT": 2,
         },
-        "IGNORE_EXCEPTIONS": True,
-        "KEY_PREFIX": "commerce_engine",
     }
 }
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
+CELERY_ACCEPT_CONTENT    = ["json"]
+CELERY_TASK_SERIALIZER   = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE          = "Asia/Riyadh"
 
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticatedOrReadOnly",
+        "rest_framework.permissions.IsAuthenticated",
     ],
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
         "rest_framework.throttling.ScopedRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "30/min",
-        "user": "120/min",
-        "login": "10/min",
-        "checkout": "20/min",
+        "login":    "10/minute",
+        "checkout": "30/minute",
     },
 }
 
 
-CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = "django-db"
-CELERY_CACHE_BACKEND = "default"
-CELERY_TASK_TRACK_STARTED = True
-CELERY_RESULT_EXTENDED = True
-CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
-
-# These settings make worker behavior predictable during load tests.
-CELERY_WORKER_CONCURRENCY = int(os.environ.get("CELERY_WORKER_CONCURRENCY", "4"))
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1
-CELERY_TASK_ACKS_LATE = True
-CELERY_TASK_REJECT_ON_WORKER_LOST = True
-CELERY_TASK_TIME_LIMIT = 30
-CELERY_TASK_SOFT_TIME_LIMIT = 20
-CELERY_TASK_DEFAULT_RETRY_DELAY = 5
-CELERY_TASK_ROUTES = {
-    "shop.tasks.send_order_confirmation": {"queue": "emails"},
-    "shop.tasks.generate_invoice": {"queue": "invoices"},
-    "shop.tasks.log_order_analytics": {"queue": "analytics"},
-}
+MAX_CONCURRENT_REQUESTS = 50
+CAPACITY_WAIT_SECONDS   = 2
 
 
-# Lightweight in-process protection. DRF throttling protects per-client rate,
-# while this limit protects the process from too many active requests at once.
-MAX_CONCURRENT_REQUESTS = int(os.environ.get("MAX_CONCURRENT_REQUESTS", "20"))
-CAPACITY_WAIT_SECONDS = float(os.environ.get("CAPACITY_WAIT_SECONDS", "2"))
+STATIC_URL = "/static/"
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+LANGUAGE_CODE = "en-us"
+TIME_ZONE     = "Asia/Riyadh"
+USE_I18N      = True
+USE_TZ        = True

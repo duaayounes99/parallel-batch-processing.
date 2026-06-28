@@ -1,13 +1,27 @@
+"""
+tasks.py
+--------
+Celery background tasks for the shop app.
+
+Request 7 addition:
+  • process_sales_batch_task now acquires a distributed lock ("lock:batch")
+    so only ONE batch job runs at a time across all Celery workers, even on a
+    multi-worker deployment.  A second trigger while a batch is running will
+    mark the new job as 'skipped' and return immediately instead of creating
+    a race condition.
+"""
+
 import logging
 import time
 
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 
-from .models import Order, BatchJob  
-
+from .models import BatchJob, Order
 
 logger = logging.getLogger(__name__)
+
+
 
 
 @shared_task(
@@ -19,7 +33,7 @@ logger = logging.getLogger(__name__)
 def send_order_confirmation(self, order_id: int) -> dict:
     try:
         order = Order.objects.get(id=order_id)
-        time.sleep(1)
+        time.sleep(1)   
         logger.info("Sent confirmation email for order %s to %s", order.id, order.customer_email)
         return {"order_id": order.id, "email": order.customer_email, "sent": True}
     except SoftTimeLimitExceeded:
@@ -61,31 +75,69 @@ def log_order_analytics(self, order_id: int) -> dict:
 
 
 
+BATCH_LOCK_KEY     = "lock:batch"
+BATCH_LOCK_TIMEOUT = 600   
+
+
 @shared_task
 def process_sales_batch_task(job_id: int) -> str:
-   
+    """
+    Process all unprocessed orders in a batch.
+
+    Distributed-lock guarantee (Request 7):
+      We try to acquire the global batch lock before doing any work.
+      If another worker already holds it, we mark this job as 'skipped'
+      and return immediately – no double-processing, no race condition.
+
+    The lock key is stored in Redis with a generous TTL so it survives
+    the full expected runtime of a large batch.
+    """
+    from django.core.cache import cache
+
     job = BatchJob.objects.get(id=job_id)
-    job.status = "processing"
-    job.save()
-    
-    logger.info("Starting batch processing for Job %s...", job_id)
-    
-    
-    unprocessed_orders = Order.objects.filter(is_processed=False)
-    orders_count = unprocessed_orders.count()
+
    
-    for order in unprocessed_orders:
-        time.sleep(2)  
-        
-        logger.info("Batch processing active: updating stock for order %s", order.id)
-        
+    acquired = cache.add(BATCH_LOCK_KEY, str(job_id), timeout=BATCH_LOCK_TIMEOUT)
+    if not acquired:
+      
+        running_job_id = cache.get(BATCH_LOCK_KEY)
+        logger.warning(
+            "Batch job %s skipped – job %s already holds the batch lock.",
+            job_id,
+            running_job_id,
+        )
+        job.status = "skipped"
+        job.save(update_fields=["status"])
+        return f"Job {job_id} skipped: batch lock held by job {running_job_id}."
+
+    try:
+        job.status = "processing"
+        job.save(update_fields=["status"])
+        logger.info("Batch job %s started.", job_id)
+
+        unprocessed_orders = Order.objects.filter(is_processed=False)
+        orders_count = unprocessed_orders.count()
+
+        for order in unprocessed_orders:
+            time.sleep(0.05)   
+            logger.info("Batch: processing order %s", order.id)
+            order.is_processed = True
+            order.save(update_fields=["is_processed"])
+
+        job.status = "completed"
+        job.save(update_fields=["status"])
+        logger.info("Batch job %s completed – %s orders processed.", job_id, orders_count)
+        return f"Processed {orders_count} orders in background."
+
+    except Exception as exc:
+        logger.exception("Batch job %s failed: %s", job_id, exc)
+        job.status = "failed"
+        job.save(update_fields=["status"])
+        raise
+
+    finally:
        
-        order.is_processed = True
-        order.save()
-        
-   
-    job.status = "completed"
-    job.save()
-    
-    logger.info("Batch job %s completed successfully.", job_id)
-    return f"Processed {orders_count} orders in background."
+        owner = cache.get(BATCH_LOCK_KEY)
+        if str(owner) == str(job_id):
+            cache.delete(BATCH_LOCK_KEY)
+            logger.debug("Batch lock released by job %s.", job_id)

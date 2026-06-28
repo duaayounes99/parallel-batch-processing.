@@ -1,16 +1,13 @@
 """
 ASGI config for commerce_engine project.
 
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
+يكشف متغير ASGI القابل للاستدعاء باسم ``application``.
 """
 
 import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'commerce_engine.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "commerce_engine.settings")
 
 application = get_asgi_application()

@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from .views import (
     CheckoutView,
@@ -14,6 +15,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("", RedirectView.as_view(url="products/"), name="index"),
     path("health/", HealthView.as_view(), name="health"),
     path("auth/register/", RegisterView.as_view(), name="register"),
     path("auth/login/", LoginView.as_view(), name="login"),
